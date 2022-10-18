@@ -1,6 +1,7 @@
 #ifndef EPC_VECTOR
 #define EPC_VECTOR
 
+#include <algorithm>
 #include <cstdlib>
 
 namespace epc
@@ -11,8 +12,36 @@ namespace epc
       public:
          vector() noexcept { }
 
-         vector(const vector&) { }
-         vector& operator=(const vector&) { }
+         vector& operator=(const vector& p_vector)
+         {
+            if (&p_vector == this)
+               return *this;
+
+            vector temp(p_vector);
+            swap(temp);
+
+            return *this;  
+         }
+
+         vector(const vector& p_vector)
+         {
+            m_size = p_vector.size();
+            m_capacity = p_vector.capacity();
+            m_data = new T [m_capacity];
+
+            try
+            {
+               for (auto i = 0u; i < p_vector.size(); ++i)
+                  m_data[i] = p_vector[i];
+            }
+            catch (const std::exception& p_e)
+            {
+               std::cerr << "Error: " << p_e.what() << '\n';
+
+               delete[] m_data;
+               throw;
+            }
+         }
 
          ~vector()
          {
@@ -36,23 +65,24 @@ namespace epc
             {
                   if (m_capacity == 0)
                   {
+                     m_data = new T[1];
                      m_capacity = 1;
-                     m_data = new T[m_capacity];
                   }
                   else
                   {
-                     m_capacity = m_capacity * 2;
-                     T* tmp = new T[m_capacity];
-
-                     for (auto i = 0u; i < m_size; ++i)
-                        tmp[i] = m_data[i];
-
-                     delete[] m_data;
-                     m_data = tmp;
+                     reallocation(m_capacity * 2);
                   }
             }
 
-            m_data[m_size++] = p_data;
+            m_data[m_size] = p_data;
+            ++m_size;
+         }
+
+         void swap(vector& p_other) noexcept
+         {
+            std::swap(m_capacity, p_other.m_capacity);
+            std::swap(m_size, p_other.m_size);
+            std::swap(m_data, p_other.m_data);
          }
 
          size_t capacity() const
@@ -60,15 +90,43 @@ namespace epc
          size_t size() const
          { return m_size; }
 
-         void reserve(size_t) { }
+         void reserve(size_t p_capacity)
+         {
+            if (p_capacity <= m_capacity)
+               return;
 
-         void pop_back() { } 
+            reallocation(p_capacity);
+         }
+
+         void pop_back()
+         { --m_size; } 
 
          void clear() { }
 
-         void swap(vector&) noexcept { }
-
       private:
+         void reallocation(size_t p_capacity)
+         {                        
+            T* tmp = new T[p_capacity];
+
+            try
+            {
+               for (auto i = 0u; i < m_size; ++i)
+                  tmp[i] = m_data[i];
+
+               delete[] m_data;
+               m_data = tmp;
+               
+               m_capacity = p_capacity;               
+            }
+            catch(const std::exception& p_e)
+            {               
+               std::cerr << "Error: " << p_e.what() << '\n';
+
+               delete[] tmp;
+               throw;
+            }
+         }
+
          unsigned m_capacity = 0;
          unsigned m_size = 0;
          T* m_data = nullptr;
