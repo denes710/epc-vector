@@ -27,26 +27,16 @@ namespace epc
          {
             m_size = p_vector.size();
             m_capacity = p_vector.capacity();
-            m_data = new T [m_capacity];
+            m_data = (T*)::operator new(m_capacity * sizeof(T));
 
-            try
-            {
-               for (auto i = 0u; i < p_vector.size(); ++i)
-                  m_data[i] = p_vector[i];
-            }
-            catch (const std::exception& p_e)
-            {
-               std::cerr << "Error: " << p_e.what() << '\n';
-
-               delete[] m_data;
-               throw;
-            }
+            for (auto i = 0u; i < p_vector.size(); ++i)
+               new (m_data + i) T(p_vector[i]);
          }
 
          ~vector()
          {
-            if (m_data)
-                  delete[] m_data;
+            clear(); // ending lifetime of original elements
+            ::operator delete(m_data); // deallocation of original storage
          }
 
          T* data()
@@ -65,7 +55,7 @@ namespace epc
             {
                   if (m_capacity == 0)
                   {
-                     m_data = new T[1];
+                     m_data = (T*)::operator new(sizeof(T));
                      m_capacity = 1;
                   }
                   else
@@ -74,7 +64,7 @@ namespace epc
                   }
             }
 
-            m_data[m_size] = p_data;
+            new (m_data + m_size) T(p_data);
             ++m_size;
          }
 
@@ -92,6 +82,7 @@ namespace epc
 
          void reserve(size_t p_capacity)
          {
+            // FIXME is it still okay?
             if (p_capacity <= m_capacity)
                return;
 
@@ -99,32 +90,32 @@ namespace epc
          }
 
          void pop_back()
-         { --m_size; } 
+         {
+            (m_data + m_size - 1)->~T();
+            --m_size;
+         }
 
-         void clear() { }
+         void clear()
+         {
+            for (; m_size > 0; --m_size)
+               (m_data + m_size - 1)->~T();
+         }
 
       private:
          void reallocation(size_t p_capacity)
          {                        
-            T* tmp = new T[p_capacity];
+            T* tmp = (T*)::operator new(p_capacity * sizeof(T));
 
-            try
-            {
-               for (auto i = 0u; i < m_size; ++i)
-                  tmp[i] = m_data[i];
+            for (auto i = 0u; i < m_size; ++i)
+               new (tmp + i) T(*(m_data + i));
 
-               delete[] m_data;
-               m_data = tmp;
-               
-               m_capacity = p_capacity;               
-            }
-            catch(const std::exception& p_e)
-            {               
-               std::cerr << "Error: " << p_e.what() << '\n';
+            for (auto i = m_size; i > 0; --i)
+               (m_data + i - 1)->~T();
 
-               delete[] tmp;
-               throw;
-            }
+            ::operator delete(m_data); // deallocation of original storage
+
+            m_data = tmp;
+            m_capacity = p_capacity;
          }
 
          unsigned m_capacity = 0;
