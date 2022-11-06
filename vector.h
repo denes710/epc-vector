@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <memory>
 
 namespace epc
 {
@@ -10,7 +11,8 @@ namespace epc
    class vector
    {
       public:
-         vector() noexcept { }
+         vector() noexcept
+         {}
 
          vector& operator=(const vector& p_vector)
          {
@@ -24,25 +26,20 @@ namespace epc
          }
 
          vector(const vector& p_vector)
+            : m_size(p_vector.size())
+            , m_capacity(p_vector.capacity())
+            , m_data((T*)::operator new(m_capacity * sizeof(T)), SDeleter(m_size))
          {
-            m_size = p_vector.size();
-            m_capacity = p_vector.capacity();
-            m_data = (T*)::operator new(m_capacity * sizeof(T));
-
             for (auto i = 0u; i < p_vector.size(); ++i)
-               new (m_data + i) T(p_vector[i]);
+               new (m_data.get() + i) T(p_vector[i]);
          }
 
-         ~vector()
-         {
-            clear(); // ending lifetime of original elements
-            ::operator delete(m_data); // deallocation of original storage
-         }
+         ~vector() = default;
 
          T* data()
-         { return m_data; }
+         { return m_data.get(); }
          const T* data() const
-         { return m_data; }
+         { return m_data.get(); }
 
          T& operator[](size_t p_idx)
          { return m_data[p_idx]; }
@@ -55,7 +52,7 @@ namespace epc
             {
                   if (m_capacity == 0)
                   {
-                     m_data = (T*)::operator new(sizeof(T));
+                     m_data.reset((T*)::operator new(m_capacity * sizeof(T)));
                      m_capacity = 1;
                   }
                   else
@@ -64,7 +61,7 @@ namespace epc
                   }
             }
 
-            new (m_data + m_size) T(p_data);
+            new (m_data.get() + m_size) T(p_data);
             ++m_size;
          }
 
@@ -72,7 +69,10 @@ namespace epc
          {
             std::swap(m_capacity, p_other.m_capacity);
             std::swap(m_size, p_other.m_size);
-            std::swap(m_data, p_other.m_data);
+
+            T* tmp = m_data.release();
+            m_data.reset(p_other.m_data.release());
+            p_other.m_data.reset(tmp);
          }
 
          size_t capacity() const
@@ -82,7 +82,6 @@ namespace epc
 
          void reserve(size_t p_capacity)
          {
-            // FIXME is it still okay?
             if (p_capacity <= m_capacity)
                return;
 
@@ -91,14 +90,14 @@ namespace epc
 
          void pop_back()
          {
-            (m_data + m_size - 1)->~T();
+            (m_data.get() + m_size - 1)->~T();
             --m_size;
          }
 
          void clear()
          {
             for (; m_size > 0; --m_size)
-               (m_data + m_size - 1)->~T();
+               (m_data.get() + m_size - 1)->~T();
          }
 
       private:
@@ -107,20 +106,36 @@ namespace epc
             T* tmp = (T*)::operator new(p_capacity * sizeof(T));
 
             for (auto i = 0u; i < m_size; ++i)
-               new (tmp + i) T(*(m_data + i));
+               new (tmp + i) T(*(m_data.get() + i));
 
-            for (auto i = m_size; i > 0; --i)
-               (m_data + i - 1)->~T();
-
-            ::operator delete(m_data); // deallocation of original storage
-
-            m_data = tmp;
+            m_data.reset(tmp); 
             m_capacity = p_capacity;
          }
 
+         struct SDeleter
+         {
+            SDeleter(unsigned& p_size)
+               : m_size(p_size)
+            {}
+
+            void operator()(T* p_ptr)
+            {
+               if (p_ptr == nullptr)
+                  return;
+
+               for (auto i = m_size.get(); i > 0; --i)
+                  (p_ptr + i - 1)->~T();
+
+               ::operator delete(p_ptr); // deallocation of original storage
+            }
+
+            std::reference_wrapper<unsigned> m_size;
+         };
+
          unsigned m_capacity = 0;
          unsigned m_size = 0;
-         T* m_data = nullptr;
+         using TUPtr = std::unique_ptr<T[], SDeleter>;
+         TUPtr m_data = TUPtr(nullptr, SDeleter(m_size));
    };
 }
 
