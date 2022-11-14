@@ -26,15 +26,10 @@ namespace epc
          }
 
          vector(const vector& p_vector)
-            : m_size(p_vector.size())
-            , m_capacity(p_vector.capacity())
-            , m_data((T*)::operator new(m_capacity * sizeof(T)), SDeleter(m_size))
-         {
-            for (auto i = 0u; i < p_vector.size(); ++i)
-               new (m_data.get() + i) T(p_vector[i]);
-         }
+         { initialize_from(p_vector); }
 
-         ~vector() = default;
+         ~vector()
+         {} // union destruction is non-trivial
 
          T* data()
          { return m_data.get(); }
@@ -48,41 +43,55 @@ namespace epc
 
          void push_back(const T& p_data)
          {
-            if (m_capacity == m_size) // reallocation
+            if (capacity() == m_size) // reallocation
             {
-                  if (m_capacity == 0)
+                  if (capacity() == 0)
                   {
-                     m_data.reset((T*)::operator new(m_capacity * sizeof(T)));
                      m_capacity = 1;
+                     m_data.reset((T*)::operator new(m_capacity * sizeof(T)));
                   }
                   else
                   {
-                     reallocation(m_capacity * 2);
+                     reallocation(is_short() ? N * 2 : m_capacity * 2);
                   }
             }
 
             new (m_data.get() + m_size) T(p_data);
+
             ++m_size;
          }
 
-         void swap(vector& p_other) noexcept
+         void swap(vector& p_other)
          {
-            std::swap(m_capacity, p_other.m_capacity);
-            std::swap(m_size, p_other.m_size);
+            if (is_short() && p_other.is_short())
+            {
+               std::swap(m_size, p_other.m_size);
+               std::swap(m_buffer, p_other.m_buffer);
+            }
+            else if (!is_short() && !p_other.is_short())
+            {
+               std::swap(m_size, p_other.m_size);
 
-            T* tmp = m_data.release();
-            m_data.reset(p_other.m_data.release());
-            p_other.m_data.reset(tmp);
+               T* tmp = m_data.release();
+               m_data.reset(p_other.m_data.release());
+               p_other.m_data.reset(tmp);
+            }
+            else
+            {
+               vector tmp(p_other);
+               p_other.initialize_from(*this);
+               initialize_from(tmp);
+            }
          }
 
          size_t capacity() const
-         { return m_capacity; }
+         { return is_short() ? N : m_capacity; }
          size_t size() const
          { return m_size; }
 
          void reserve(size_t p_capacity)
          {
-            if (p_capacity <= m_capacity)
+            if (p_capacity <= capacity())
                return;
 
             reallocation(p_capacity);
@@ -101,21 +110,11 @@ namespace epc
          }
 
       private:
-         void reallocation(size_t p_capacity)
-         {                        
-            T* tmp = (T*)::operator new(p_capacity * sizeof(T));
-
-            for (auto i = 0u; i < m_size; ++i)
-               new (tmp + i) T(*(m_data.get() + i));
-
-            m_data.reset(tmp); 
-            m_capacity = p_capacity;
-         }
-
          struct SDeleter
          {
-            SDeleter(unsigned& p_size)
+            SDeleter(unsigned& p_size, T* p_buffer)
                : m_size(p_size)
+               , m_buffer(p_buffer)
             {}
 
             void operator()(T* p_ptr)
@@ -126,16 +125,55 @@ namespace epc
                for (auto i = m_size.get(); i > 0; --i)
                   (p_ptr + i - 1)->~T();
 
-               ::operator delete(p_ptr); // deallocation of original storage
+               if (p_ptr != m_buffer)
+                  ::operator delete(p_ptr); // deallocation of original storage
             }
 
             std::reference_wrapper<unsigned> m_size;
+            const T* m_buffer;
          };
 
-         unsigned m_capacity = 0;
+         void reallocation(size_t p_capacity)
+         {
+            T* tmp = (T*)::operator new(p_capacity * sizeof(T));
+
+            for (auto i = 0u; i < m_size; ++i)
+               new (tmp + i) T(*(m_data.get() + i));
+
+            m_data.reset(tmp);
+            m_capacity = p_capacity;
+         }
+
+         bool is_short() const
+         { return m_data.get() == m_buffer; }
+
+         void initialize_from(const vector& p_vector)
+         {
+            if (p_vector.is_short())
+            {
+               m_data.reset(m_buffer);
+            }
+            else
+            {
+               m_data.reset((T*)::operator new(p_vector.capacity() * sizeof(T)));
+               m_capacity = p_vector.capacity();
+            }
+
+            for (auto i = 0u; i < p_vector.size(); ++i)
+               new (m_data.get() + i) T(p_vector[i]);
+
+            m_size = p_vector.size();
+         }
+
+         union
+         {
+            unsigned m_capacity;
+            T m_buffer[N];
+         };
+
          unsigned m_size = 0;
          using TUPtr = std::unique_ptr<T[], SDeleter>;
-         TUPtr m_data = TUPtr(nullptr, SDeleter(m_size));
+         TUPtr m_data = TUPtr(m_buffer, SDeleter(m_size, m_buffer));
    };
 }
 
