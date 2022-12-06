@@ -49,7 +49,7 @@ BOOST_AUTO_TEST_CASE(long_move_test)
 
       BOOST_TEST( v_move[0] == 1 );
       BOOST_TEST( v_move[1] == 2 );
-      BOOST_TEST( v_move[1] == 3 );
+      BOOST_TEST( v_move[2] == 3 );
 
       BOOST_TEST( v.size() == 0 );
    }

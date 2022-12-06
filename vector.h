@@ -28,8 +28,33 @@ namespace epc
          vector(const vector& p_vector)
          { initialize_from(p_vector); }
 
-         ~vector()
-         {} // union destruction is non-trivial
+         vector(vector&& p_vector)
+         {
+            initialize_data(p_vector);
+
+            for (; m_size < p_vector.size(); ++m_size)
+               new (m_data.get() + m_size) T(std::move(p_vector[m_size]));
+
+            p_vector.m_isMoved = true;
+         }
+
+         vector& operator=(vector&& p_vector)
+         {
+            if (&p_vector == this)
+               return *this;
+
+            initialize_data(p_vector);
+
+            for (; m_size < p_vector.size(); ++m_size)
+               new (m_data.get() + m_size) T(std::move(p_vector[m_size]));
+
+            p_vector.m_isMoved = true;
+
+            return *this;
+         }
+
+         ~vector() // union destruction is non-trivial
+         {}
 
          T* data()
          { return m_data.get(); }
@@ -42,22 +67,28 @@ namespace epc
          { return m_data[p_idx]; }
 
          void push_back(const T& p_data)
+         { emplace_back(p_data); }
+
+         void push_back(T&& p_data)
+         { emplace_back(std::move(p_data)); }
+
+         template <typename... Ts>
+         void emplace_back(Ts&&... args)
          {
             if (capacity() == m_size) // reallocation
             {
-                  if (capacity() == 0)
-                  {
-                     m_capacity = 1;
-                     m_data.reset((T*)::operator new(m_capacity * sizeof(T)));
-                  }
-                  else
-                  {
-                     reallocation(is_short() ? N * 2 : m_capacity * 2);
-                  }
+               if (capacity() == 0)
+               {
+                  m_capacity = 1;
+                  m_data.reset((T*)::operator new(m_capacity * sizeof(T)));
+               }
+               else
+               {
+                  reallocation(is_short() ? N * 2 : m_capacity * 2);
+               }
             }
 
-            new (m_data.get() + m_size) T(p_data);
-
+            new (m_data.get() + m_size) T(std::forward<Ts>(args)...);
             ++m_size;
          }
 
@@ -82,7 +113,7 @@ namespace epc
          size_t capacity() const
          { return is_short() ? N : m_capacity; }
          size_t size() const
-         { return m_size; }
+         { return m_isMoved ? 0 : m_size; }
 
          void reserve(size_t p_capacity)
          {
@@ -131,9 +162,20 @@ namespace epc
          void reallocation(size_t p_capacity)
          {
             T* tmp = (T*)::operator new(p_capacity * sizeof(T));
+            size_t i = 0;
 
-            for (auto i = 0u; i < m_size; ++i)
-               new (tmp + i) T(*(m_data.get() + i));
+            try
+            {
+               for (; i < m_size; ++i)
+                  new (tmp + i) T(std::move(*(m_data.get() + i)));
+            }
+            catch (...)
+            {
+               for (; i > 0; --i)
+                  (tmp + i - 1)->~T();
+               ::operator delete(tmp);
+               throw;
+            }
 
             m_data.reset(tmp);
             m_capacity = p_capacity;
@@ -143,6 +185,14 @@ namespace epc
          { return m_data.get() == m_buffer; }
 
          void initialize_from(const vector& p_vector)
+         {
+            initialize_data(p_vector);
+
+            for (; m_size < p_vector.size(); ++m_size)
+               new (m_data.get() + m_size) T(p_vector[m_size]);
+         }
+
+         void initialize_data(const vector& p_vector)
          {
             if (p_vector.is_short())
             {
@@ -154,10 +204,7 @@ namespace epc
                m_capacity = p_vector.capacity();
             }
 
-            for (auto i = 0u; i < p_vector.size(); ++i)
-               new (m_data.get() + i) T(p_vector[i]);
-
-            m_size = p_vector.size();
+            m_size = 0;
          }
 
          union
@@ -169,6 +216,7 @@ namespace epc
          unsigned m_size = 0;
          using TUPtr = std::unique_ptr<T[], SDeleter>;
          TUPtr m_data = TUPtr(m_buffer, SDeleter(m_size, m_buffer));
+         bool m_isMoved = false;
    };
 }
 
