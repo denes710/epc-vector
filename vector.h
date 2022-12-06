@@ -63,12 +63,7 @@ namespace epc
 
          void swap(vector& p_other)
          {
-            if (is_short() && p_other.is_short())
-            {
-               std::swap(m_size, p_other.m_size);
-               std::swap(m_buffer, p_other.m_buffer);
-            }
-            else if (!is_short() && !p_other.is_short())
+            if (!is_short() && !p_other.is_short())
             {
                std::swap(m_size, p_other.m_size);
 
