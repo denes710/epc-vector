@@ -122,14 +122,14 @@ namespace epc
                if (p_ptr == nullptr)
                   return;
 
-               for (auto i = m_size.get(); i > 0; --i)
+               for (auto i = m_size; i > 0; --i)
                   (p_ptr + i - 1)->~T();
 
                if (p_ptr != m_buffer)
                   ::operator delete(p_ptr); // deallocation of original storage
             }
 
-            std::reference_wrapper<unsigned> m_size;
+            const unsigned& m_size;
             const T* m_buffer;
          };
 
